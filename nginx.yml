@@ -1,0 +1,88 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+  gather_facts: true
+  tasks:
+    - name: Update apt cache.
+      apt: update_cache=yes cache_valid_time=86400
+      changed_when: false
+
+    - name: Ensure nginx is installed.
+      apt:
+        name: nginx
+        state: present
+
+    - name: Ensure Nginx has selected state and enabled on boot.
+      service:
+        name: "nginx"
+        state: "started"
+        enabled: yes
+
+    - name: Get DF
+      command: "df -h /"
+      delegate_to: 127.0.0.1
+      environment:
+        LANG: C
+      changed_when: False
+      register: df
+      failed_when: "df.rc != 0"
+
+    - name: Write file
+      copy:
+        dest: "/var/www/html/index.html"
+        mode: 0755
+        content: |
+                 <!DOCTYPE html>
+                 <html lang="en">
+                 <head>
+                   <meta charset="UTF-8" />
+                   <title>Server Specifications</title>
+                 </head>
+                 <body>
+                 CPU cores: {{ ansible_processor_cores }} <br>
+                 RAM: {{ ansible_memtotal_mb }} <br>
+                 Disk usage:<br>
+                 {{ df.stdout }}
+                 </body>
+                 </html>
+
+
+      delegate_to: 127.0.0.1
+
+    - name: Write vhost
+      copy:
+        dest: "/etc/nginx/sites-available/vhost.conf"
+        mode: 0755
+        content: |
+                 server {
+                 	listen 80;
+                 	root /var/www/html;
+                 	index index.html;
+                 	server_name _;
+                 	location / {
+                 		try_files $uri $uri/ =404;
+                 	}
+                 }
+      delegate_to: 127.0.0.1
+
+    - name: Create link to vhost
+      file:
+        src: "/etc/nginx/sites-available/vhost.conf"
+        dest: "/etc/nginx/sites-enabled/vhost.conf"
+        state:  link
+
+    - name: Remove default vhost
+      file:
+        dest: "/etc/nginx/sites-enabled/default"
+        state:  absent
+
+    - name: reload nginx 
+      systemd:
+        daemon_reload: yes
+        name: "nginx"
+        state: reloaded
+
+    
+
+    
+
